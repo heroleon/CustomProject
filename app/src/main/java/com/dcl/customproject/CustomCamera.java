@@ -1,25 +1,15 @@
 package com.dcl.customproject;
 
-import android.Manifest;
 import android.animation.ObjectAnimator;
 import android.app.Activity;
-import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
-import android.graphics.Bitmap.Config;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
-import android.graphics.Paint;
-import android.graphics.Rect;
 import android.hardware.Camera;
 import android.hardware.Camera.CameraInfo;
 import android.os.Bundle;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
+import android.os.Environment;
 import android.text.TextUtils;
 import android.view.Display;
 import android.view.SurfaceHolder;
@@ -31,9 +21,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.Toast;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -42,28 +30,33 @@ import java.util.List;
 /**
  * @author dcl
  * 2017/9/1
+ * 自定义相机
  **/
 public class CustomCamera extends Activity implements SurfaceHolder.Callback {
 
+	public static final String RETURN_IMAGES = "return_img";
 	private Camera mCamera;
 	private SurfaceView surfaceView;
 	private SurfaceHolder surfaceHolder;
-	int REQUEST_EXTERNAL_STORAGE=1;
-	String[] PERMISSIONS_STORAGE={
-			Manifest.permission.READ_EXTERNAL_STORAGE,
-			Manifest.permission.WRITE_EXTERNAL_STORAGE
-	};
+	private String wholeUrl;
+	private String[] markTexts = null;
 
 	private Camera.PictureCallback mPictureCallback = new Camera.PictureCallback() {
 		@Override
 		public void onPictureTaken(byte[] data, Camera camera) {
-
-			String path ="/sdcard/waterpic/";
+			String time = convertToTime(System.currentTimeMillis());
+			if(!TextUtils.isEmpty(addr)){
+				setMarkTexts(addr,time);
+			}else{
+				setMarkTexts(time);
+			}
+			String path = Environment.getExternalStorageDirectory().getPath()+"/waterpic/";
 			File tempFile = new File(path);
 			if (!tempFile.exists()) {
 				tempFile.mkdirs();
 			}
 			Bitmap bit = compressImageFromFile(path, data);
+
 			take_photo.setVisibility(View.GONE);
 			switch_camera.setVisibility(View.GONE);
 			surfaceView.setVisibility(View.GONE);
@@ -74,65 +67,33 @@ public class CustomCamera extends Activity implements SurfaceHolder.Callback {
 			startPropertyAnim(cancel_choose, -300f);
 			startPropertyAnim(confirm_choose, 300f);
 			showPicture.setImageBitmap(bit);
-
 		}
 	};
-	private String wholeUrl;
 
+	private void setMarkTexts(String... markTexts)
+	{
+		this.markTexts = markTexts;
+	}
 	private Bitmap compressImageFromFile(String file, byte[] data) {
-		if (PackageManager.PERMISSION_GRANTED!=
-				ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CONTACTS))
-		{
-			ActivityCompat.requestPermissions(this,PERMISSIONS_STORAGE,REQUEST_EXTERNAL_STORAGE);
-		}
-		BitmapFactory.Options newOpts = new BitmapFactory.Options();
-		newOpts.inJustDecodeBounds = true;
-		Bitmap bitmap;
-		newOpts.inJustDecodeBounds = false;
-		int w = newOpts.outWidth;
-		int h = newOpts.outHeight;
-		float hh = 800f;//
-		float ww = 480f;//
-		int be = 1;
-		if (w > h && w > ww) {
-			be = (int) (newOpts.outWidth / ww);
-		} else if (w < h && h > hh) {
-			be = (int) (newOpts.outHeight / hh);
-		}
-		if (be <= 0)
-			be = 1;
-		newOpts.inSampleSize = be;
-
-		newOpts.inPreferredConfig = Config.ARGB_8888;
-		newOpts.inPurgeable = true;
-		newOpts.inInputShareable = true;
-		bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, newOpts);
+		String time = String.valueOf(System.currentTimeMillis());
+		wholeUrl = file + time + ".jpg";
+		Bitmap compressBitmap = BitmapUtil.compressImageFromFile(data);
 		Matrix matrix = new Matrix();
 		if (cameraPosition == 1) {
 			matrix.setRotate(90);
 		} else {
 			matrix.setRotate(-90);
 		}
-		bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-		String timeMark = convertToTime(System.currentTimeMillis());
-		bitmap = drawTextToRightBottom(getApplicationContext(), bitmap, timeMark, 8, Color.YELLOW, 10, 5);
-		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		bitmap.compress(Bitmap.CompressFormat.JPEG, 100, baos);
-		try {
-			String time = String.valueOf(System.currentTimeMillis());
-			wholeUrl = file + time + ".png";
-			FileOutputStream fos = new FileOutputStream(wholeUrl);
-			fos.write(baos.toByteArray());
-			fos.flush();
-			fos.close();
-		} catch (Exception e) {
-			Toast.makeText(getApplicationContext(),e.getMessage(),Toast.LENGTH_SHORT).show();
-			e.printStackTrace();
+		compressBitmap = Bitmap.createBitmap(compressBitmap, 0, 0, compressBitmap.getWidth(), compressBitmap.getHeight(), matrix, true);
+		Bitmap markedBitmap = null;
+		if(markTexts!=null){
+			markedBitmap = BitmapUtil.drawTextInPhoto(compressBitmap,this,markTexts);
+			BitmapUtil.writeBitmap2File(markedBitmap, new File(wholeUrl));
 		}
-		return bitmap;
+		return markedBitmap;
 	}
 
-	public static String convertToTime(long time) {
+	public String convertToTime(long time) {
 		SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 		Date date = new Date(time);
 		return df.format(date);
@@ -151,6 +112,8 @@ public class CustomCamera extends Activity implements SurfaceHolder.Callback {
 		super.onCreate(savedInstanceState);
 		requestWindowFeature(Window.FEATURE_NO_TITLE);
 		setContentView(R.layout.act_custom_camera);
+		Intent intent = getIntent();
+		//addr = getIntent().getStringExtra(MainActivity.WATERADDR);
 
 		surfaceView = (SurfaceView) findViewById(R.id.sf_preview);
 
@@ -179,6 +142,7 @@ public class CustomCamera extends Activity implements SurfaceHolder.Callback {
 		List<Camera.Size> sizes = parameters.getSupportedPictureSizes();
 		Display display = getWindowManager().getDefaultDisplay();
 		int maxSize = Math.max(display.getWidth(), display.getHeight());
+		parameters.getSupportedPictureSizes();
 		int length = sizes.size();
 		if (maxSize > 0) {
 			for (int i = 0; i < length; i++) {
@@ -198,52 +162,61 @@ public class CustomCamera extends Activity implements SurfaceHolder.Callback {
 				}
 			}
 		}
-
-		mCamera.autoFocus(new Camera.AutoFocusCallback() {
-			@Override
-			public void onAutoFocus(boolean success, Camera camera) {
-				camera.takePicture(null, null, mPictureCallback);
+		if(cameraPosition==1){
+			mCamera.setParameters(parameters);
+		}
+		try{
+			if(mCamera!=null){
+				mCamera.autoFocus(new Camera.AutoFocusCallback() {
+					@Override
+					public void onAutoFocus(boolean success, Camera camera) {
+						camera.takePicture(null, null, mPictureCallback);
+					}
+				});
 			}
-		});
+		}catch (Exception e) {
+		}
+
 	}
 
 	public void switchCamera(View view) {
 		chooseCamera();
 	}
-	
+
 	private void chooseCamera() {
-
-				int cameraCount = 0;
-				CameraInfo cameraInfo = new CameraInfo();
-				cameraCount = Camera.getNumberOfCameras();
-				for (int i = 0; i < cameraCount; i++) {
-					Camera.getCameraInfo(i, cameraInfo);
-					if (cameraPosition == 1) {
-
-						if (cameraInfo.facing == CameraInfo.CAMERA_FACING_FRONT) {
-							releaseCamera();
-							mCamera = Camera.open(i);
-							setStartPreview(mCamera, surfaceHolder);
-							cameraPosition = 0;
-							break;
-						}
-					} else {
-						if (cameraInfo.facing == CameraInfo.CAMERA_FACING_BACK) {
-							releaseCamera();
-							mCamera = Camera.open(i);
-							setStartPreview(mCamera, surfaceHolder);
-							cameraPosition = 1;
-							break;
-						}
-					}
-
+		// 切换前后摄像头
+		int cameraCount = 0;
+		CameraInfo cameraInfo = new CameraInfo();
+		cameraCount = Camera.getNumberOfCameras();// 得到摄像头的个数
+		for (int i = 0; i < cameraCount; i++) {
+			Camera.getCameraInfo(i, cameraInfo);// 得到每一个摄像头的信息
+			if (cameraPosition == 1) {
+				// 现在是后置，变更为前置
+				if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {// 代表摄像头的方位，CAMERA_FACING_FRONT前置
+					releaseCamera();
+					mCamera = Camera.open(i);// 打开当前选中的摄像头
+					setStartPreview(mCamera, surfaceHolder);
+					cameraPosition = 0;
+					break;
 				}
-		
+			} else {
+				// 现在是前置， 变更为后置
+				if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_BACK) {// 代表摄像头的方位，CAMERA_FACING_FRONT前置
+					releaseCamera();
+					mCamera = Camera.open(i);// 打开当前选中的摄像头
+					setStartPreview(mCamera, surfaceHolder);
+					cameraPosition = 1;
+					break;
+				}
+			}
+
+		}
+
 	}
 
 	public void choosePic(View view) {
 		Intent returnIntent = getIntent();
-		returnIntent.putExtra(MainActivity.RETURN_IMAGES, wholeUrl);
+		returnIntent.putExtra(RETURN_IMAGES, wholeUrl);
 		setResult(RESULT_OK, returnIntent);
 		finish();
 	}
@@ -313,9 +286,10 @@ public class CustomCamera extends Activity implements SurfaceHolder.Callback {
 	}
 
 	private void startPropertyAnim(ImageButton ib, float translate) {
-
+		// X轴方向上的坐标
 		float translationX = take_photo.getTranslationX();
-
+		// 向右移动500pix，然后再移动到原来的位置复原。
+		// 参数“translationX”指明在x坐标轴位移，即水平位移。
 		ObjectAnimator anim = ObjectAnimator.ofFloat(ib, "translationX", translationX, translate);
 		anim.setDuration(500);
 		anim.start();
@@ -332,49 +306,12 @@ public class CustomCamera extends Activity implements SurfaceHolder.Callback {
 			mCamera.stopPreview();
 			setStartPreview(mCamera, surfaceHolder);
 		} else {
-			Toast.makeText(getApplicationContext(),"请开启相机权限",Toast.LENGTH_SHORT).show();
+			Toast.makeText(getApplicationContext(), "请开启摄像权限",Toast.LENGTH_SHORT).show();
 			finish();
 		}
 	}
 
 	@Override
 	public void surfaceDestroyed(SurfaceHolder holder) {
-	}
-
-	public Bitmap drawTextToRightBottom(Context context, Bitmap bitmap, String text, int size, int color,
-			int paddingRight, int paddingBottom) {
-		Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-		paint.setColor(color);
-		paint.setTextSize(dp2px(context, size));
-		Rect bounds = new Rect();
-		paint.getTextBounds(text, 0, text.length(), bounds);
-		return drawTextToBitmap(context, bitmap, text, paint, bounds,
-				bitmap.getWidth() - bounds.width() - dp2px(context, paddingRight),
-				bitmap.getHeight() - dp2px(context, paddingBottom));
-	}
-
-
-	private Bitmap drawTextToBitmap(Context context, Bitmap bitmap, String text, Paint paint, Rect bounds,
-			int paddingLeft, int paddingTop) {
-		Config bitmapConfig = bitmap.getConfig();
-
-		paint.setDither(true);
-		paint.setFilterBitmap(true);
-		if (bitmapConfig == null) {
-			bitmapConfig = Config.ARGB_8888;
-		}
-		bitmap = bitmap.copy(bitmapConfig, true);
-		Canvas canvas = new Canvas(bitmap);
-
-		canvas.drawText(text, paddingLeft, paddingTop, paint);
-		if(!TextUtils.isEmpty(addr)){
-			canvas.drawText(addr, paddingLeft, paddingTop-30, paint);
-		}
-		return bitmap;
-	}
-
-	public int dp2px(Context context, float dp) {
-		final float scale = context.getResources().getDisplayMetrics().density;
-		return (int) (dp * scale + 0.5f);
 	}
 }
